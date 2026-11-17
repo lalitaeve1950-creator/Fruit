@@ -1,0 +1,236 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachable Machine AI</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            text-align: center;
+            padding: 30px 15px;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            max-width: 500px;
+            margin: auto;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2563eb;
+        }
+
+        button {
+            padding: 12px 25px;
+            margin: 8px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        #webcam-container {
+            margin: 20px auto;
+        }
+
+        canvas {
+            border-radius: 12px;
+            max-width: 100%;
+        }
+
+        .result {
+            text-align: left;
+            margin-top: 20px;
+        }
+
+        .prediction {
+            margin: 15px 0;
+        }
+
+        .bar {
+            height: 18px;
+            background: #e2e8f0;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+
+        .fill {
+            height: 100%;
+            width: 0%;
+            background: #2563eb;
+            transition: width 0.3s;
+        }
+
+        #top-result {
+            color: #16a34a;
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        #status {
+            color: #64748b;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>AI Image Recognition</h1>
+    <p>ระบบจำแนกภาพด้วย Teachable Machine</p>
+
+    <button id="startBtn" onclick="init()">Start</button>
+    <button id="stopBtn" onclick="stopCamera()" disabled>Stop</button>
+
+    <div id="webcam-container"></div>
+
+    <div id="top-result">
+        ผลการทำนาย: -
+    </div>
+
+    <div class="result" id="label-container"></div>
+
+    <p id="status">กด Start เพื่อเริ่มใช้งาน AI</p>
+
+</div>
+
+<script>
+    const URL = "https://teachablemachine.withgoogle.com/models/CJtGL516f/";
+
+    let model;
+    let webcam;
+    let maxPredictions;
+    let running = false;
+    let animationId;
+
+    async function init() {
+        try {
+            document.getElementById("startBtn").disabled = true;
+            document.getElementById("status").innerText = "กำลังโหลดโมเดล AI...";
+
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            const flip = true;
+            webcam = new tmImage.Webcam(300, 300, flip);
+
+            await webcam.setup();
+            await webcam.play();
+
+            document.getElementById("webcam-container").innerHTML = "";
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+
+            const labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const item = document.createElement("div");
+                item.className = "prediction";
+                item.innerHTML = `
+                    <strong></strong>
+                    <div class="bar">
+                        <div class="fill"></div>
+                    </div>
+                `;
+                labelContainer.appendChild(item);
+            }
+
+            running = true;
+
+            document.getElementById("stopBtn").disabled = false;
+            document.getElementById("status").innerText = "AI พร้อมใช้งาน";
+
+            loop();
+
+        } catch (error) {
+            console.error(error);
+            document.getElementById("status").innerText =
+                "เกิดข้อผิดพลาด กรุณาตรวจสอบกล้องและการเชื่อมต่ออินเทอร์เน็ต";
+
+            document.getElementById("startBtn").disabled = false;
+        }
+    }
+
+    async function loop() {
+        if (!running) return;
+
+        webcam.update();
+        await predict();
+
+        if (running) {
+            animationId = requestAnimationFrame(loop);
+        }
+    }
+
+    async function predict() {
+        const prediction = await model.predict(webcam.canvas);
+
+        let highest = prediction[0];
+
+        for (let i = 0; i < maxPredictions; i++) {
+
+            const probability = prediction[i].probability * 100;
+
+            const item = document.getElementById("label-container").children[i];
+
+            item.querySelector("strong").innerText =
+                prediction[i].className + " : " + probability.toFixed(2) + "%";
+
+            item.querySelector(".fill").style.width =
+                probability + "%";
+
+            if (prediction[i].probability > highest.probability) {
+                highest = prediction[i];
+            }
+        }
+
+        document.getElementById("top-result").innerText =
+            "ผลการทำนาย: " + highest.className;
+    }
+
+    function stopCamera() {
+        running = false;
+
+        cancelAnimationFrame(animationId);
+
+        if (webcam) {
+            webcam.stop();
+        }
+
+        document.getElementById("webcam-container").innerHTML = "";
+        document.getElementById("top-result").innerText = "ผลการทำนาย: -";
+        document.getElementById("status").innerText = "หยุดกล้องแล้ว";
+
+        document.getElementById("startBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = true;
+    }
+
+</script>
+
+</body>
+</html>
